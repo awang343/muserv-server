@@ -18,7 +18,8 @@ pub fn routes() -> Router<SharedState> {
 pub struct Track {
     pub id: i64,
     pub library_id: i64,
-    pub path: String,
+    pub hash: Option<String>,
+    pub original_filename: Option<String>,
     pub title: Option<String>,
     pub album: Option<String>,
     pub artist: Option<String>,
@@ -33,9 +34,9 @@ pub struct Track {
     pub added_at: i64,
 }
 
-const TRACK_COLS: &str = "id, library_id, path, title, album, artist, album_artist, \
-                          track_no, disc_no, duration_ms, year, bitrate, sample_rate, \
-                          channels, added_at";
+const TRACK_COLS: &str = "id, library_id, hash, original_filename, title, album, artist, \
+                          album_artist, track_no, disc_no, duration_ms, year, bitrate, \
+                          sample_rate, channels, added_at";
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {

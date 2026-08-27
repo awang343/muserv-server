@@ -6,14 +6,16 @@ use axum::{Json, Router};
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 pub mod auth;
+pub mod downloaders;
 pub mod error;
+pub mod import;
 pub mod playlists;
-pub mod scans;
 pub mod search;
 pub mod stream;
 pub mod tags;
@@ -24,7 +26,9 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub auth_token: Option<String>,
     pub libraries: Vec<Library>,
-    pub scan_states: Arc<Mutex<HashMap<i64, scans::ScanState>>>,
+    pub import_states: Arc<Mutex<HashMap<i64, import::ImportState>>>,
+    pub downloaders_path: Option<PathBuf>,
+    pub downloader_jobs: downloaders::JobStore,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -41,12 +45,19 @@ impl AppState {
     }
 }
 
-pub fn router(pool: SqlitePool, auth_token: Option<String>, libraries: Vec<Library>) -> Router {
+pub fn router(
+    pool: SqlitePool,
+    auth_token: Option<String>,
+    libraries: Vec<Library>,
+    downloaders_path: Option<PathBuf>,
+) -> Router {
     let state = Arc::new(AppState {
         pool,
         auth_token,
         libraries,
-        scan_states: Arc::new(Mutex::new(HashMap::new())),
+        import_states: Arc::new(Mutex::new(HashMap::new())),
+        downloaders_path,
+        downloader_jobs: Arc::new(Mutex::new(HashMap::new())),
     });
 
     let library_scoped = Router::new()
@@ -54,7 +65,8 @@ pub fn router(pool: SqlitePool, auth_token: Option<String>, libraries: Vec<Libra
         .merge(tags::library_routes())
         .merge(search::routes())
         .merge(playlists::routes())
-        .merge(scans::routes());
+        .merge(import::routes())
+        .merge(downloaders::routes());
 
     let protected = Router::new()
         .route("/api/libraries", get(list_libraries))

@@ -19,11 +19,18 @@ async fn stream_track(
     Path(id): Path<i64>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
-    let path: String = sqlx::query_scalar("SELECT path FROM tracks WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("track"))?;
+    let row: (i64, Option<String>) =
+        sqlx::query_as("SELECT library_id, storage_path FROM tracks WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("track"))?;
+    let (library_id, storage_path) = row;
+    let storage_path = storage_path.ok_or_else(|| {
+        ApiError::bad_request("track not yet imported into content-addressed storage; run `muserv import`")
+    })?;
+    let lib = state.require_library(library_id)?;
+    let path = lib.root().join(&storage_path);
 
     let mut file = File::open(&path).await?;
     let total_size = file.metadata().await?.len();

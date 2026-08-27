@@ -21,6 +21,12 @@ pub struct Config {
     /// named "main".
     #[serde(default)]
     pub library_path: Option<PathBuf>,
+
+    /// Directory of executable downloader scripts the API can offer to run
+    /// (see `api::downloaders`). Optional — the downloaders API returns an
+    /// empty list if unset.
+    #[serde(default)]
+    pub downloaders_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

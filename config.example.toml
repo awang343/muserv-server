@@ -11,8 +11,11 @@ bind = "127.0.0.1:7700"
 #   openssl rand -hex 32
 # auth_token = "paste-a-long-random-string-here"
 
-# One or more libraries. Names must be unique and are user-visible. Paths are
-# scanned recursively. The order here controls the default sort in clients.
+# One or more libraries. Names must be unique and are user-visible. Each path
+# is a plain directory muserv owns: audio files live under it in a
+# content-addressed `.storage` folder, populated by `muserv import` (or the
+# "Import" button/action in clients) rather than by scanning. The order here
+# controls the default sort in clients.
 [[library]]
 name = "main"
 path = "/path/to/your/music"
@@ -20,3 +23,10 @@ path = "/path/to/your/music"
 # [[library]]
 # name = "podcasts"
 # path = "/path/to/your/podcasts"
+
+# Optional. Directory of executable downloader scripts clients can run to
+# pull music straight into the currently selected library — see
+# scripts/downloaders/example.sh for the contract scripts must follow and
+# scripts/downloaders/yt-dlp.sh for a real one. Unset means the downloaders
+# API returns an empty list.
+# downloaders_path = "/path/to/muserv/scripts/downloaders"
