@@ -22,10 +22,16 @@ let the new per-library `muserv import` pick them up fresh afterwards
 will not carry over for those specific tracks).
 """
 import argparse
+import hashlib
 import pathlib
 import sqlite3
 import sys
 import tomllib
+
+MIGRATIONS_DIR = pathlib.Path(__file__).resolve().parent.parent / "migrations"
+BASELINE_MIGRATION = MIGRATIONS_DIR / "20260827000002_initial.sql"
+BASELINE_VERSION = 20260827000002
+BASELINE_DESCRIPTION = "initial"
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -139,6 +145,27 @@ def main() -> int:
         path.mkdir(parents=True, exist_ok=True)
         new = sqlite3.connect(db_path)
         new.executescript(SCHEMA)
+        # Stamp sqlx's own migration-tracking table so it doesn't try to
+        # re-apply (and fail on "table already exists") the next time
+        # `muserv` starts and runs `sqlx::migrate!()` against this db.
+        new.execute(
+            """
+            CREATE TABLE IF NOT EXISTS _sqlx_migrations (
+                version BIGINT PRIMARY KEY,
+                description TEXT NOT NULL,
+                installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                success BOOLEAN NOT NULL,
+                checksum BLOB NOT NULL,
+                execution_time BIGINT NOT NULL
+            )
+            """
+        )
+        checksum = hashlib.sha384(BASELINE_MIGRATION.read_bytes()).digest()
+        new.execute(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) "
+            "VALUES (?, ?, 1, ?, 0)",
+            (BASELINE_VERSION, BASELINE_DESCRIPTION, checksum),
+        )
         new.execute("ATTACH DATABASE ? AS old", (str(args.old_db),))
 
         new.execute(
