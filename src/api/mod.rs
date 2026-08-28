@@ -23,7 +23,7 @@ pub mod tracks;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: SqlitePool,
+    pub pools: HashMap<i64, SqlitePool>,
     pub auth_token: Option<String>,
     pub libraries: Vec<Library>,
     pub import_states: Arc<Mutex<HashMap<i64, import::ImportState>>>,
@@ -43,16 +43,23 @@ impl AppState {
             .cloned()
             .ok_or_else(|| ApiError::not_found("library"))
     }
+
+    /// Resolve a library id from the URL to that library's own db pool.
+    /// Returns a 404 if the id is not configured.
+    pub fn pool(&self, id: i64) -> Result<&SqlitePool, ApiError> {
+        self.pools.get(&id).ok_or_else(|| ApiError::not_found("library"))
+    }
 }
 
 pub fn router(
-    pool: SqlitePool,
+    libraries: Vec<(Library, SqlitePool)>,
     auth_token: Option<String>,
-    libraries: Vec<Library>,
     downloaders_path: Option<PathBuf>,
 ) -> Router {
+    let pools = libraries.iter().map(|(l, p)| (l.id, p.clone())).collect();
+    let libraries = libraries.into_iter().map(|(l, _)| l).collect();
     let state = Arc::new(AppState {
-        pool,
+        pools,
         auth_token,
         libraries,
         import_states: Arc::new(Mutex::new(HashMap::new())),
@@ -66,14 +73,13 @@ pub fn router(
         .merge(search::routes())
         .merge(playlists::routes())
         .merge(import::routes())
-        .merge(downloaders::routes());
+        .merge(downloaders::routes())
+        .merge(stream::routes());
 
     let protected = Router::new()
         .route("/api/libraries", get(list_libraries))
         .route("/api/libraries/{lib_id}", get(get_library))
         .nest("/api/libraries/{lib_id}", library_scoped)
-        .merge(stream::routes())
-        .merge(tags::global_routes())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::require_bearer,

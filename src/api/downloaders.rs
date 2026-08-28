@@ -32,7 +32,6 @@ pub enum JobStatus {
 #[derive(Clone, Serialize)]
 pub struct Job {
     pub id: String,
-    pub library_id: i64,
     pub script: String,
     pub urls: Vec<String>,
     /// Index into `urls` of the one currently downloading; `None` once every
@@ -167,7 +166,6 @@ async fn run(
     let job_id = Uuid::new_v4().to_string();
     let job = Job {
         id: job_id.clone(),
-        library_id: lib_id,
         script: name,
         urls: urls.clone(),
         current_index: Some(0),
@@ -200,8 +198,8 @@ async fn job_status(
         .lock()
         .expect("downloader_jobs poisoned");
     match jobs.get(&id) {
-        Some(job) if job.library_id == lib_id => Ok(Json(job.clone())),
-        _ => Err(ApiError::not_found("job")),
+        Some(job) => Ok(Json(job.clone())),
+        None => Err(ApiError::not_found("job")),
     }
 }
 
@@ -270,7 +268,8 @@ async fn run_job(state: SharedState, job_id: String, lib: Library, script: PathB
     set_current_index(&state, &job_id, None);
     append_log(&state, &job_id, "=== importing downloaded files ===".to_string());
 
-    let (summary, import_failed) = match ingest::import_dir(&state.pool, &lib, &staging_root, CopyMode::Move).await {
+    let pool = state.pools.get(&lib.id).expect("library removed while job running").clone();
+    let (summary, import_failed) = match ingest::import_dir(&pool, &lib, &staging_root, CopyMode::Move).await {
         Ok(stats) => {
             append_log(
                 &state,

@@ -17,7 +17,6 @@ pub fn routes() -> Router<SharedState> {
 #[derive(Debug, Serialize, FromRow)]
 pub struct Track {
     pub id: i64,
-    pub library_id: i64,
     pub hash: Option<String>,
     pub original_filename: Option<String>,
     pub title: Option<String>,
@@ -34,7 +33,7 @@ pub struct Track {
     pub added_at: i64,
 }
 
-const TRACK_COLS: &str = "id, library_id, hash, original_filename, title, album, artist, \
+const TRACK_COLS: &str = "id, hash, original_filename, title, album, artist, \
                           album_artist, track_no, disc_no, duration_ms, year, bitrate, \
                           sample_rate, channels, added_at";
 
@@ -56,7 +55,7 @@ async fn list_tracks(
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
     let offset = q.offset.unwrap_or(0).max(0);
 
-    let mut sql = format!("SELECT {TRACK_COLS} FROM tracks WHERE library_id = ?");
+    let mut sql = format!("SELECT {TRACK_COLS} FROM tracks WHERE 1=1");
     let mut binds: Vec<String> = Vec::new();
     if let Some(v) = &q.album {
         sql.push_str(" AND album = ?");
@@ -72,11 +71,11 @@ async fn list_tracks(
     }
     sql.push_str(" ORDER BY album_artist, album, disc_no, track_no, title LIMIT ? OFFSET ?");
 
-    let mut q = sqlx::query_as::<_, Track>(&sql).bind(lib_id);
+    let mut q = sqlx::query_as::<_, Track>(&sql);
     for b in &binds {
         q = q.bind(b);
     }
-    let rows = q.bind(limit).bind(offset).fetch_all(&state.pool).await?;
+    let rows = q.bind(limit).bind(offset).fetch_all(state.pool(lib_id)?).await?;
     Ok(Json(rows))
 }
 
@@ -86,11 +85,10 @@ async fn get_track(
 ) -> ApiResult<Json<Track>> {
     state.require_library(lib_id)?;
     let row = sqlx::query_as::<_, Track>(&format!(
-        "SELECT {TRACK_COLS} FROM tracks WHERE library_id = ? AND id = ?"
+        "SELECT {TRACK_COLS} FROM tracks WHERE id = ?"
     ))
-    .bind(lib_id)
     .bind(id)
-    .fetch_optional(&state.pool)
+    .fetch_optional(state.pool(lib_id)?)
     .await?
     .ok_or_else(|| ApiError::not_found("track"))?;
     Ok(Json(row))
@@ -111,11 +109,10 @@ async fn list_albums(
     state.require_library(lib_id)?;
     let rows = sqlx::query_as::<_, AlbumRow>(
         "SELECT album, album_artist, MIN(year) AS year, COUNT(*) AS track_count \
-         FROM tracks WHERE library_id = ? AND album IS NOT NULL \
+         FROM tracks WHERE album IS NOT NULL \
          GROUP BY album, album_artist ORDER BY album_artist, album",
     )
-    .bind(lib_id)
-    .fetch_all(&state.pool)
+    .fetch_all(state.pool(lib_id)?)
     .await?;
     Ok(Json(rows))
 }
@@ -133,10 +130,9 @@ async fn list_artists(
     let _ = state.require_library(lib_id)?;
     let rows = sqlx::query_as::<_, ArtistRow>(
         "SELECT artist, COUNT(*) AS track_count FROM tracks \
-         WHERE library_id = ? AND artist IS NOT NULL GROUP BY artist ORDER BY artist",
+         WHERE artist IS NOT NULL GROUP BY artist ORDER BY artist",
     )
-    .bind(lib_id)
-    .fetch_all(&state.pool)
+    .fetch_all(state.pool(lib_id)?)
     .await?;
     Ok(Json(rows))
 }

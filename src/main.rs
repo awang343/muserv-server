@@ -81,9 +81,8 @@ async fn main() -> Result<()> {
         .with_context(|| format!("loading config from {}", config_path.display()))?;
     tracing::info!(?cfg, "loaded config");
 
-    let pool = db::connect(&cfg.db_path).await?;
-    let libs = libraries::sync(&pool, &cfg.libraries).await?;
-    tracing::info!(count = libs.len(), "libraries synced");
+    let libs = libraries::open_all(&cfg.libraries).await?;
+    tracing::info!(count = libs.len(), "libraries opened");
 
     match cli.cmd {
         Cmd::Import { library, path, move_files } => {
@@ -91,36 +90,34 @@ async fn main() -> Result<()> {
             if let Some(dir) = path {
                 let name = library
                     .ok_or_else(|| anyhow::anyhow!("--library is required when --path is given"))?;
-                let lib = libs
+                let (lib, pool) = libs
                     .iter()
-                    .find(|l| l.name == name)
+                    .find(|(l, _)| l.name == name)
                     .ok_or_else(|| anyhow::anyhow!("no matching library"))?;
-                println!("== importing {} into library: {} ({}) ==", dir.display(), lib.name, lib.root_path);
-                let stats = ingest::import_dir(&pool, lib, &dir, mode).await?;
+                println!("== importing {} into library: {} ({}) ==", dir.display(), lib.name, lib.path);
+                let stats = ingest::import_dir(pool, lib, &dir, mode).await?;
                 print_import_summary(&stats);
             } else {
-                let to_import: Vec<&libraries::Library> = match library.as_deref() {
-                    Some(name) => libs.iter().filter(|l| l.name == name).collect(),
+                let to_import: Vec<&(libraries::Library, sqlx::SqlitePool)> = match library.as_deref() {
+                    Some(name) => libs.iter().filter(|(l, _)| l.name == name).collect(),
                     None => libs.iter().collect(),
                 };
                 if to_import.is_empty() {
                     anyhow::bail!("no matching library");
                 }
-                for lib in to_import {
-                    println!("== library: {} ({}) ==", lib.name, lib.root_path);
-                    let legacy = ingest::migrate_legacy_rows(&pool, lib, mode).await?;
-                    let loose = ingest::import_dir(&pool, lib, &lib.root(), mode).await?;
-                    print_import_summary(&legacy.merge(loose));
+                for (lib, pool) in to_import {
+                    println!("== library: {} ({}) ==", lib.name, lib.path);
+                    let stats = ingest::import_dir(pool, lib, &lib.root(), mode).await?;
+                    print_import_summary(&stats);
                 }
             }
         }
         Cmd::Serve { import } => {
             if import {
-                for lib in &libs {
-                    println!("== library: {} ({}) ==", lib.name, lib.root_path);
-                    let legacy = ingest::migrate_legacy_rows(&pool, lib, ingest::CopyMode::Move).await?;
-                    let loose = ingest::import_dir(&pool, lib, &lib.root(), ingest::CopyMode::Move).await?;
-                    print_import_summary(&legacy.merge(loose));
+                for (lib, pool) in &libs {
+                    println!("== library: {} ({}) ==", lib.name, lib.path);
+                    let stats = ingest::import_dir(pool, lib, &lib.root(), ingest::CopyMode::Move).await?;
+                    print_import_summary(&stats);
                 }
             }
             if cfg.auth_token.is_none() && !cfg.bind.starts_with("127.")
@@ -129,7 +126,7 @@ async fn main() -> Result<()> {
             {
                 tracing::warn!(bind = %cfg.bind, "auth_token is unset and bind is non-loopback — API is open");
             }
-            let router = api::router(pool, cfg.auth_token.clone(), libs, cfg.downloaders_path.clone());
+            let router = api::router(libs, cfg.auth_token.clone(), cfg.downloaders_path.clone());
             let listener = tokio::net::TcpListener::bind(&cfg.bind)
                 .await
                 .with_context(|| format!("binding {}", cfg.bind))?;

@@ -11,25 +11,24 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio_util::io::ReaderStream;
 
 pub fn routes() -> Router<SharedState> {
-    Router::new().route("/api/tracks/{id}/stream", get(stream_track))
+    Router::new().route("/tracks/{id}/stream", get(stream_track))
 }
 
 async fn stream_track(
     State(state): State<SharedState>,
-    Path(id): Path<i64>,
+    Path((lib_id, id)): Path<(i64, i64)>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
-    let row: (i64, Option<String>) =
-        sqlx::query_as("SELECT library_id, storage_path FROM tracks WHERE id = ?")
+    let lib = state.require_library(lib_id)?;
+    let storage_path: Option<String> =
+        sqlx::query_scalar("SELECT storage_path FROM tracks WHERE id = ?")
             .bind(id)
-            .fetch_optional(&state.pool)
+            .fetch_optional(state.pool(lib_id)?)
             .await?
             .ok_or_else(|| ApiError::not_found("track"))?;
-    let (library_id, storage_path) = row;
     let storage_path = storage_path.ok_or_else(|| {
         ApiError::bad_request("track not yet imported into content-addressed storage; run `muserv import`")
     })?;
-    let lib = state.require_library(library_id)?;
     let path = lib.root().join(&storage_path);
 
     let mut file = File::open(&path).await?;

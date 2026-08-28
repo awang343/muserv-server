@@ -18,11 +18,6 @@ pub fn library_routes() -> Router<SharedState> {
         .route("/tags", get(list_tags_in_library))
 }
 
-/// Routes that are not per-library.
-pub fn global_routes() -> Router<SharedState> {
-    Router::new().route("/api/tags", get(list_tags_global))
-}
-
 #[derive(Debug, Serialize, FromRow)]
 pub struct TrackTagRow {
     pub tag_id: i64,
@@ -38,10 +33,9 @@ async fn require_track_in_lib(
 ) -> Result<(), ApiError> {
     state.require_library(lib_id)?;
     let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM tracks WHERE library_id = ? AND id = ?")
-            .bind(lib_id)
+        sqlx::query_scalar("SELECT id FROM tracks WHERE id = ?")
             .bind(track_id)
-            .fetch_optional(&state.pool)
+            .fetch_optional(state.pool(lib_id)?)
             .await?;
     if exists.is_none() {
         return Err(ApiError::not_found("track"));
@@ -61,7 +55,7 @@ async fn list_track_tags(
          ORDER BY t.namespace, t.value",
     )
     .bind(id)
-    .fetch_all(&state.pool)
+    .fetch_all(state.pool(lib_id)?)
     .await?;
     Ok(Json(rows))
 }
@@ -92,7 +86,7 @@ async fn add_user_tag(
     }
 
     let now = chrono::Utc::now().timestamp();
-    let mut tx = state.pool.begin().await?;
+    let mut tx = state.pool(lib_id)?.begin().await?;
 
     let tag_id: i64 = sqlx::query_scalar(
         r#"
@@ -137,7 +131,7 @@ async fn remove_user_tag(
     )
     .bind(track_id)
     .bind(tag_id)
-    .execute(&state.pool)
+    .execute(state.pool(lib_id)?)
     .await?;
     if res.rows_affected() == 0 {
         return Err(ApiError::not_found("tag on track"));
@@ -162,22 +156,9 @@ async fn list_tags_in_library(
         "SELECT t.id AS tag_id, t.namespace, t.value, COUNT(DISTINCT tt.track_id) AS track_count \
          FROM tags t JOIN track_tags tt ON tt.tag_id = t.id \
          JOIN tracks tr ON tr.id = tt.track_id \
-         WHERE tr.library_id = ? \
          GROUP BY t.id ORDER BY track_count DESC, t.namespace, t.value",
     )
-    .bind(lib_id)
-    .fetch_all(&state.pool)
-    .await?;
-    Ok(Json(rows))
-}
-
-async fn list_tags_global(State(state): State<SharedState>) -> ApiResult<Json<Vec<TagCount>>> {
-    let rows = sqlx::query_as::<_, TagCount>(
-        "SELECT t.id AS tag_id, t.namespace, t.value, COUNT(DISTINCT tt.track_id) AS track_count \
-         FROM tags t LEFT JOIN track_tags tt ON tt.tag_id = t.id \
-         GROUP BY t.id ORDER BY track_count DESC, t.namespace, t.value",
-    )
-    .fetch_all(&state.pool)
+    .fetch_all(state.pool(lib_id)?)
     .await?;
     Ok(Json(rows))
 }

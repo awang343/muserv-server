@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub db_path: PathBuf,
     pub bind: String,
     /// If set, all /api/* routes require `Authorization: Bearer <token>`.
     /// If unset, the API is open — fine for localhost, never for non-loopback.
@@ -16,12 +15,6 @@ pub struct Config {
     #[serde(rename = "library", default)]
     pub libraries: Vec<LibraryConfig>,
 
-    /// Legacy single-library path, kept for backwards-compat with old configs.
-    /// If `libraries` is empty and this is set, it becomes the sole library
-    /// named "main".
-    #[serde(default)]
-    pub library_path: Option<PathBuf>,
-
     /// Directory of executable downloader scripts the API can offer to run
     /// (see `api::downloaders`). Optional — the downloaders API returns an
     /// empty list if unset.
@@ -29,6 +22,10 @@ pub struct Config {
     pub downloaders_path: Option<PathBuf>,
 }
 
+/// `path` is a folder muserv owns end-to-end: it holds `library.db` (this
+/// library's own sqlite db) and `.storage/` (its content-addressed audio
+/// files), both created on first run. Libraries are fully independent —
+/// nothing is shared across them.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LibraryConfig {
     pub name: String,
@@ -45,14 +42,6 @@ impl Config {
     }
 
     fn normalize(&mut self) -> Result<()> {
-        if self.libraries.is_empty() {
-            if let Some(p) = self.library_path.take() {
-                self.libraries.push(LibraryConfig {
-                    name: "main".into(),
-                    path: p,
-                });
-            }
-        }
         if self.libraries.is_empty() {
             bail!("config has no libraries — add at least one [[library]] section");
         }

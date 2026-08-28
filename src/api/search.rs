@@ -57,9 +57,9 @@ async fn search(
     }
 
     let mut sql = String::from(
-        "SELECT id, library_id, hash, original_filename, title, album, artist, album_artist, \
+        "SELECT id, hash, original_filename, title, album, artist, album_artist, \
          track_no, disc_no, duration_ms, year, bitrate, sample_rate, channels, added_at \
-         FROM tracks t WHERE library_id = ?",
+         FROM tracks t WHERE 1=1",
     );
     let mut binds: Vec<String> = Vec::new();
 
@@ -79,10 +79,10 @@ async fn search(
 
     sql.push_str(" ORDER BY album_artist, album, disc_no, track_no, title LIMIT ? OFFSET ?");
 
-    let mut query = sqlx::query_as::<_, Track>(&sql).bind(lib_id);
+    let mut query = sqlx::query_as::<_, Track>(&sql);
     for b in &binds {
         query = query.bind(b);
     }
-    let rows = query.bind(limit).bind(offset).fetch_all(&state.pool).await?;
+    let rows = query.bind(limit).bind(offset).fetch_all(state.pool(lib_id)?).await?;
     Ok(Json(rows))
 }

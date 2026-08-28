@@ -1,8 +1,5 @@
 # Copy to config.toml and edit.
 
-# Where the SQLite DB lives.
-db_path = "./data/music-lib.db"
-
 # HTTP bind address.
 bind = "127.0.0.1:7700"
 
@@ -11,11 +8,14 @@ bind = "127.0.0.1:7700"
 #   openssl rand -hex 32
 # auth_token = "paste-a-long-random-string-here"
 
-# One or more libraries. Names must be unique and are user-visible. Each path
-# is a plain directory muserv owns: audio files live under it in a
-# content-addressed `.storage` folder, populated by `muserv import` (or the
-# "Import" button/action in clients) rather than by scanning. The order here
-# controls the default sort in clients.
+# One or more libraries. Names must be unique and are user-visible. Each
+# library is fully independent: `path` is a plain directory muserv owns,
+# containing that library's own `library.db` and a content-addressed
+# `.storage` folder, both created on first run. Audio files dropped
+# anywhere under `path` (outside `.storage`) get picked up and moved into
+# `.storage` by `muserv import` (or the "Import" button/action in clients).
+# The order here controls each library's id and the default sort in
+# clients — reordering or removing entries reassigns ids.
 [[library]]
 name = "main"
 path = "/path/to/your/music"

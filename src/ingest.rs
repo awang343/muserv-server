@@ -44,17 +44,6 @@ pub struct ImportStats {
     pub failures: Vec<ImportFailure>,
 }
 
-impl ImportStats {
-    pub fn merge(mut self, other: ImportStats) -> Self {
-        self.scanned += other.scanned;
-        self.imported += other.imported;
-        self.duplicates += other.duplicates;
-        self.failed += other.failed;
-        self.failures.extend(other.failures);
-        self
-    }
-}
-
 #[derive(Debug)]
 pub struct ImportFailure {
     pub path: PathBuf,
@@ -120,105 +109,13 @@ pub async fn import_dir(
     Ok(stats)
 }
 
-/// Migrates rows left over from the old path-based scanner (`storage_path`
-/// still NULL): hashes the file at each row's legacy `path`, copies/moves it
-/// into `.storage`, and updates the row *in place* — the track id doesn't
-/// change, so playlists and tags that already reference it keep working.
-/// If two legacy rows turn out to have identical content, the second one
-/// processed is dropped (its playlist/tag associations are lost — this is
-/// content dedup, same outcome a fresh import of a duplicate file would
-/// produce).
-pub async fn migrate_legacy_rows(pool: &SqlitePool, lib: &Library, mode: CopyMode) -> Result<ImportStats> {
-    let mut stats = ImportStats::default();
-
-    let rows: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT id, path FROM tracks WHERE library_id = ? AND storage_path IS NULL AND path IS NOT NULL",
-    )
-    .bind(lib.id)
-    .fetch_all(pool)
-    .await?;
-
-    for (track_id, path) in rows {
-        stats.scanned += 1;
-        let src = PathBuf::from(&path);
-        match migrate_one(pool, lib, track_id, &src, mode).await {
-            Ok(true) => stats.imported += 1,
-            Ok(false) => stats.duplicates += 1,
-            Err(e) => {
-                warn!(track_id, path = %path, error = ?e, "legacy migration failed");
-                stats.failed += 1;
-                stats.failures.push(ImportFailure {
-                    path: src,
-                    reason: format!("{e:#}"),
-                });
-            }
-        }
-    }
-
-    info!(
-        scanned = stats.scanned,
-        imported = stats.imported,
-        duplicates = stats.duplicates,
-        failed = stats.failed,
-        "legacy migration complete"
-    );
-    Ok(stats)
-}
-
-/// Returns `true` if the row was migrated in place, `false` if it was
-/// dropped as a duplicate of another (already-migrated or already-processed)
-/// row in the same library.
-async fn migrate_one(
-    pool: &SqlitePool,
-    lib: &Library,
-    track_id: i64,
-    src: &Path,
-    mode: CopyMode,
-) -> Result<bool> {
-    let hash = hash_file(src).await?;
-
-    let existing: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM tracks WHERE library_id = ? AND hash = ? AND id != ?")
-            .bind(lib.id)
-            .bind(&hash)
-            .bind(track_id)
-            .fetch_optional(pool)
-            .await?;
-
-    if existing.is_some() {
-        sqlx::query("DELETE FROM tracks WHERE id = ?")
-            .bind(track_id)
-            .execute(pool)
-            .await?;
-        return Ok(false);
-    }
-
-    let storage_rel = store_file(lib, src, &hash, mode).await?;
-    let original_filename = filename_of(src);
-    let file_size = tokio::fs::metadata(lib.root().join(&storage_rel)).await?.len() as i64;
-
-    sqlx::query(
-        "UPDATE tracks SET hash = ?, storage_path = ?, original_filename = ?, file_size = ? WHERE id = ?",
-    )
-    .bind(&hash)
-    .bind(&storage_rel)
-    .bind(&original_filename)
-    .bind(file_size)
-    .bind(track_id)
-    .execute(pool)
-    .await?;
-
-    Ok(true)
-}
-
 /// Hashes, tag-parses, and inserts one new track from `src` into `lib`.
 /// Returns `Duplicate` (without touching `src`) if a track with the same
 /// content hash already exists in the library.
 async fn ingest_file(pool: &SqlitePool, lib: &Library, src: &Path, mode: CopyMode) -> Result<IngestOutcome> {
     let hash = hash_file(src).await?;
 
-    let existing: Option<i64> = sqlx::query_scalar("SELECT id FROM tracks WHERE library_id = ? AND hash = ?")
-        .bind(lib.id)
+    let existing: Option<i64> = sqlx::query_scalar("SELECT id FROM tracks WHERE hash = ?")
         .bind(&hash)
         .fetch_optional(pool)
         .await?;
@@ -239,15 +136,14 @@ async fn ingest_file(pool: &SqlitePool, lib: &Library, src: &Path, mode: CopyMod
     sqlx::query(
         r#"
         INSERT INTO tracks (
-            library_id, hash, storage_path, original_filename,
+            hash, storage_path, original_filename,
             title, album, artist, album_artist,
             track_no, disc_no, duration_ms, year,
             bitrate, sample_rate, channels,
             file_size, added_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
-    .bind(lib.id)
     .bind(&hash)
     .bind(&storage_rel)
     .bind(&original_filename)
