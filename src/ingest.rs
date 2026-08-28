@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::ItemKey;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use std::io::Read;
@@ -50,13 +51,34 @@ pub struct ImportFailure {
     pub reason: String,
 }
 
+/// Serializable summary of an `ImportStats`, for API responses (e.g. the
+/// downloader job's post-download ingest summary).
+#[derive(Debug, Clone, Serialize)]
+pub struct ImportStatsView {
+    pub scanned: u64,
+    pub imported: u64,
+    pub duplicates: u64,
+    pub failed: u64,
+}
+
+impl From<&ImportStats> for ImportStatsView {
+    fn from(s: &ImportStats) -> Self {
+        Self {
+            scanned: s.scanned,
+            imported: s.imported,
+            duplicates: s.duplicates,
+            failed: s.failed,
+        }
+    }
+}
+
 /// Walks `dir` recursively and ingests every audio file found, skipping the
 /// library's own `.storage` directory (already-ingested files live there).
-/// Used both for ad-hoc bulk imports of a folder of new music and, pointed
-/// at a library's own root, to pick up files that were never tracked at all
-/// (e.g. dropped in by hand). Safe to re-run: files whose content already
-/// exists in the library (by hash) are reported as duplicates rather than
-/// re-imported.
+/// Used for ad-hoc bulk imports of a folder of new music (the `muserv
+/// import --path` CLI command) and for the downloader feature's
+/// post-download staging directory. Safe to re-run: files whose content
+/// already exists in the library (by hash) are reported as duplicates
+/// rather than re-imported.
 pub async fn import_dir(
     pool: &SqlitePool,
     lib: &Library,

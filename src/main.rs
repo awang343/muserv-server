@@ -32,24 +32,15 @@ fn default_config_path() -> PathBuf {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Import audio files into a library's content-addressed storage.
-    ///
-    /// With no --path, self-migrates the library: converts any legacy
-    /// (pre-restructure) rows still pointing at their original on-disk path,
-    /// and picks up any audio files sitting loose in the library root that
-    /// were never tracked at all. With --path, bulk-imports every audio file
-    /// found under that directory instead (e.g. importing a folder of new
-    /// music).
+    /// Bulk-import a folder of audio files into a library's
+    /// content-addressed storage (e.g. importing a folder of new music).
     Import {
-        /// Only import into this library (by name). Required when --path is
-        /// given (to disambiguate); defaults to all configured libraries
-        /// otherwise.
+        /// Library to import into (by name).
         #[arg(long)]
-        library: Option<String>,
-        /// Import audio files from this directory instead of self-migrating
-        /// the library's own root.
+        library: String,
+        /// Import audio files from this directory.
         #[arg(long)]
-        path: Option<PathBuf>,
+        path: PathBuf,
         /// Move files into storage instead of copying them. Frees up space
         /// by removing originals once they're safely stored — recommended
         /// for migrating an existing library, since otherwise each file
@@ -59,12 +50,7 @@ enum Cmd {
         move_files: bool,
     },
     /// Run the HTTP server.
-    Serve {
-        /// Import all libraries (self-migrate + pick up loose files) before
-        /// starting, moving files into storage.
-        #[arg(long)]
-        import: bool,
-    },
+    Serve,
 }
 
 #[tokio::main]
@@ -87,39 +73,15 @@ async fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Import { library, path, move_files } => {
             let mode = if move_files { ingest::CopyMode::Move } else { ingest::CopyMode::Copy };
-            if let Some(dir) = path {
-                let name = library
-                    .ok_or_else(|| anyhow::anyhow!("--library is required when --path is given"))?;
-                let (lib, pool) = libs
-                    .iter()
-                    .find(|(l, _)| l.name == name)
-                    .ok_or_else(|| anyhow::anyhow!("no matching library"))?;
-                println!("== importing {} into library: {} ({}) ==", dir.display(), lib.name, lib.path);
-                let stats = ingest::import_dir(pool, lib, &dir, mode).await?;
-                print_import_summary(&stats);
-            } else {
-                let to_import: Vec<&(libraries::Library, sqlx::SqlitePool)> = match library.as_deref() {
-                    Some(name) => libs.iter().filter(|(l, _)| l.name == name).collect(),
-                    None => libs.iter().collect(),
-                };
-                if to_import.is_empty() {
-                    anyhow::bail!("no matching library");
-                }
-                for (lib, pool) in to_import {
-                    println!("== library: {} ({}) ==", lib.name, lib.path);
-                    let stats = ingest::import_dir(pool, lib, &lib.root(), mode).await?;
-                    print_import_summary(&stats);
-                }
-            }
+            let (lib, pool) = libs
+                .iter()
+                .find(|(l, _)| l.name == library)
+                .ok_or_else(|| anyhow::anyhow!("no matching library"))?;
+            println!("== importing {} into library: {} ({}) ==", path.display(), lib.name, lib.path);
+            let stats = ingest::import_dir(pool, lib, &path, mode).await?;
+            print_import_summary(&stats);
         }
-        Cmd::Serve { import } => {
-            if import {
-                for (lib, pool) in &libs {
-                    println!("== library: {} ({}) ==", lib.name, lib.path);
-                    let stats = ingest::import_dir(pool, lib, &lib.root(), ingest::CopyMode::Move).await?;
-                    print_import_summary(&stats);
-                }
-            }
+        Cmd::Serve => {
             if cfg.auth_token.is_none() && !cfg.bind.starts_with("127.")
                 && !cfg.bind.starts_with("localhost")
                 && !cfg.bind.starts_with("[::1]")

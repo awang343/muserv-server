@@ -14,7 +14,6 @@ use tower_http::trace::TraceLayer;
 pub mod auth;
 pub mod downloaders;
 pub mod error;
-pub mod import;
 pub mod playlists;
 pub mod search;
 pub mod stream;
@@ -26,7 +25,6 @@ pub struct AppState {
     pub pools: HashMap<i64, SqlitePool>,
     pub auth_token: Option<String>,
     pub libraries: Vec<Library>,
-    pub import_states: Arc<Mutex<HashMap<i64, import::ImportState>>>,
     pub downloaders_path: Option<PathBuf>,
     pub downloader_jobs: downloaders::JobStore,
 }
@@ -62,7 +60,6 @@ pub fn router(
         pools,
         auth_token,
         libraries,
-        import_states: Arc::new(Mutex::new(HashMap::new())),
         downloaders_path,
         downloader_jobs: Arc::new(Mutex::new(HashMap::new())),
     });
@@ -72,7 +69,6 @@ pub fn router(
         .merge(tags::library_routes())
         .merge(search::routes())
         .merge(playlists::routes())
-        .merge(import::routes())
         .merge(downloaders::routes())
         .merge(stream::routes());
 

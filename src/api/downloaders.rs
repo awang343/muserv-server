@@ -1,7 +1,6 @@
 use crate::api::error::{ApiError, ApiResult};
-use crate::api::import::ImportStatsView;
 use crate::api::SharedState;
-use crate::ingest::{self, CopyMode};
+use crate::ingest::{self, CopyMode, ImportStatsView};
 use crate::libraries::Library;
 use axum::extract::{Path, State};
 use axum::routing::{get, post};

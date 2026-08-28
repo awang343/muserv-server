@@ -10,10 +10,10 @@ bind = "127.0.0.1:7700"
 
 # One or more libraries. Names must be unique and are user-visible. Each
 # library is fully independent: `path` is a plain directory muserv owns,
-# containing that library's own `library.db` and a content-addressed
-# `.storage` folder, both created on first run. Audio files dropped
-# anywhere under `path` (outside `.storage`) get picked up and moved into
-# `.storage` by `muserv import` (or the "Import" button/action in clients).
+# containing only that library's own `library.db` and a content-addressed
+# `.storage` folder, both created on first run. New music is added via
+# `muserv import --library <name> --path <dir>` (bulk-imports a folder) or
+# a downloader script — nothing should be dropped directly into `path`.
 # The order here controls each library's id and the default sort in
 # clients — reordering or removing entries reassigns ids.
 [[library]]
