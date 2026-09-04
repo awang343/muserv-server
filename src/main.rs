@@ -10,7 +10,11 @@ mod ingest;
 mod libraries;
 
 #[derive(Parser)]
-#[command(name = "muserv", version, about = "Muserv: personal music library server")]
+#[command(
+    name = "muserv",
+    version,
+    about = "Muserv: personal music library server"
+)]
 struct Cli {
     /// Path to config.toml. Defaults to $XDG_CONFIG_HOME/muserv/config.toml
     /// (or ~/.config/muserv/config.toml).
@@ -57,7 +61,8 @@ enum Cmd {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,muserv=debug")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,muserv=debug")),
         )
         .init();
 
@@ -71,18 +76,32 @@ async fn main() -> Result<()> {
     tracing::info!(count = libs.len(), "libraries opened");
 
     match cli.cmd {
-        Cmd::Import { library, path, move_files } => {
-            let mode = if move_files { ingest::CopyMode::Move } else { ingest::CopyMode::Copy };
+        Cmd::Import {
+            library,
+            path,
+            move_files,
+        } => {
+            let mode = if move_files {
+                ingest::CopyMode::Move
+            } else {
+                ingest::CopyMode::Copy
+            };
             let (lib, pool) = libs
                 .iter()
                 .find(|(l, _)| l.name == library)
                 .ok_or_else(|| anyhow::anyhow!("no matching library"))?;
-            println!("== importing {} into library: {} ({}) ==", path.display(), lib.name, lib.path);
+            println!(
+                "== importing {} into library: {} ({}) ==",
+                path.display(),
+                lib.name,
+                lib.path
+            );
             let stats = ingest::import_dir(pool, lib, &path, mode).await?;
             print_import_summary(&stats);
         }
         Cmd::Serve => {
-            if cfg.auth_token.is_none() && !cfg.bind.starts_with("127.")
+            if cfg.auth_token.is_none()
+                && !cfg.bind.starts_with("127.")
                 && !cfg.bind.starts_with("localhost")
                 && !cfg.bind.starts_with("[::1]")
             {

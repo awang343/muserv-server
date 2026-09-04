@@ -134,7 +134,12 @@ pub async fn import_dir(
 /// Hashes, tag-parses, and inserts one new track from `src` into `lib`.
 /// Returns `Duplicate` (without touching `src`) if a track with the same
 /// content hash already exists in the library.
-async fn ingest_file(pool: &SqlitePool, lib: &Library, src: &Path, mode: CopyMode) -> Result<IngestOutcome> {
+async fn ingest_file(
+    pool: &SqlitePool,
+    lib: &Library,
+    src: &Path,
+    mode: CopyMode,
+) -> Result<IngestOutcome> {
     let hash = hash_file(src).await?;
 
     let existing: Option<i64> = sqlx::query_scalar("SELECT id FROM tracks WHERE hash = ?")
@@ -152,7 +157,9 @@ async fn ingest_file(pool: &SqlitePool, lib: &Library, src: &Path, mode: CopyMod
 
     let storage_rel = store_file(lib, src, &hash, mode).await?;
     let original_filename = filename_of(src);
-    let file_size = tokio::fs::metadata(lib.root().join(&storage_rel)).await?.len() as i64;
+    let file_size = tokio::fs::metadata(lib.root().join(&storage_rel))
+        .await?
+        .len() as i64;
     let now = chrono::Utc::now().timestamp();
 
     sqlx::query(
@@ -219,11 +226,15 @@ async fn store_file(lib: &Library, src: &Path, hash: &str, mode: CopyMode) -> Re
 
     match mode {
         CopyMode::Copy => {
-            tokio::fs::copy(src, &dest).await.context("copying into storage")?;
+            tokio::fs::copy(src, &dest)
+                .await
+                .context("copying into storage")?;
         }
         CopyMode::Move => {
             if tokio::fs::rename(src, &dest).await.is_err() {
-                tokio::fs::copy(src, &dest).await.context("copying into storage")?;
+                tokio::fs::copy(src, &dest)
+                    .await
+                    .context("copying into storage")?;
                 tokio::fs::remove_file(src)
                     .await
                     .context("removing source after copy")?;
@@ -248,7 +259,8 @@ async fn hash_file(path: &Path) -> Result<String> {
             }
             hasher.update(&buf[..n]);
         }
-        Ok(format!("{:x}", hasher.finalize()))
+        let digest = hasher.finalize();
+        Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
     })
     .await
     .context("blocking hash task")??;

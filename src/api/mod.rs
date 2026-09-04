@@ -45,7 +45,9 @@ impl AppState {
     /// Resolve a library id from the URL to that library's own db pool.
     /// Returns a 404 if the id is not configured.
     pub fn pool(&self, id: i64) -> Result<&SqlitePool, ApiError> {
-        self.pools.get(&id).ok_or_else(|| ApiError::not_found("library"))
+        self.pools
+            .get(&id)
+            .ok_or_else(|| ApiError::not_found("library"))
     }
 }
 

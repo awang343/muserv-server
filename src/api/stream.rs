@@ -27,7 +27,9 @@ async fn stream_track(
             .await?
             .ok_or_else(|| ApiError::not_found("track"))?;
     let storage_path = storage_path.ok_or_else(|| {
-        ApiError::bad_request("track not yet imported into content-addressed storage; run `muserv import`")
+        ApiError::bad_request(
+            "track not yet imported into content-addressed storage; run `muserv import`",
+        )
     })?;
     let path = lib.root().join(&storage_path);
 
@@ -89,6 +91,10 @@ fn parse_range(s: &str) -> Option<(u64, Option<u64>)> {
     let (start, end) = first.split_once('-')?;
     let start: u64 = start.trim().parse().ok()?;
     let end = end.trim();
-    let end = if end.is_empty() { None } else { Some(end.parse().ok()?) };
+    let end = if end.is_empty() {
+        None
+    } else {
+        Some(end.parse().ok()?)
+    };
     Some((start, end))
 }

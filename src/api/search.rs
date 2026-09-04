@@ -35,9 +35,15 @@ fn parse_query(q: &str) -> Result<Vec<Token<'_>>, ApiError> {
             .split_once(':')
             .ok_or_else(|| ApiError::bad_request(format!("token '{raw}' missing ':'")))?;
         if val.is_empty() {
-            return Err(ApiError::bad_request(format!("token '{raw}' has empty value")));
+            return Err(ApiError::bad_request(format!(
+                "token '{raw}' has empty value"
+            )));
         }
-        out.push(Token { negated, namespace: ns, value: val });
+        out.push(Token {
+            negated,
+            namespace: ns,
+            value: val,
+        });
     }
     Ok(out)
 }
@@ -79,10 +85,15 @@ async fn search(
 
     sql.push_str(" ORDER BY album_artist, album, disc_no, track_no, title LIMIT ? OFFSET ?");
 
-    let mut query = sqlx::query_as::<_, Track>(&sql);
+    // Safe: dynamic part only toggles fixed clauses; all values are bound below.
+    let mut query = sqlx::query_as::<_, Track>(sqlx::AssertSqlSafe(sql));
     for b in &binds {
         query = query.bind(b);
     }
-    let rows = query.bind(limit).bind(offset).fetch_all(state.pool(lib_id)?).await?;
+    let rows = query
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(state.pool(lib_id)?)
+        .await?;
     Ok(Json(rows))
 }

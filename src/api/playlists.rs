@@ -18,14 +18,8 @@ pub fn routes() -> Router<SharedState> {
             "/playlists/{id}/tracks",
             get(get_tracks).post(add_track).put(set_tracks),
         )
-        .route(
-            "/playlists/{id}/tracks/{track_id}",
-            delete(remove_track),
-        )
-        .route(
-            "/tracks/{track_id}/playlists",
-            get(list_containing_track),
-        )
+        .route("/playlists/{id}/tracks/{track_id}", delete(remove_track))
+        .route("/tracks/{track_id}/playlists", get(list_containing_track))
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -153,11 +147,10 @@ async fn get_tracks(
     Path((lib_id, id)): Path<(i64, i64)>,
 ) -> ApiResult<Json<Vec<PlaylistTrack>>> {
     state.require_library(lib_id)?;
-    let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
-            .bind(id)
-            .fetch_optional(state.pool(lib_id)?)
-            .await?;
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
+        .bind(id)
+        .fetch_optional(state.pool(lib_id)?)
+        .await?;
     if exists.is_none() {
         return Err(ApiError::not_found("playlist"));
     }
@@ -169,11 +162,10 @@ async fn list_containing_track(
     Path((lib_id, track_id)): Path<(i64, i64)>,
 ) -> ApiResult<Json<Vec<i64>>> {
     state.require_library(lib_id)?;
-    let tr_exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM tracks WHERE id = ?")
-            .bind(track_id)
-            .fetch_optional(state.pool(lib_id)?)
-            .await?;
+    let tr_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM tracks WHERE id = ?")
+        .bind(track_id)
+        .fetch_optional(state.pool(lib_id)?)
+        .await?;
     if tr_exists.is_none() {
         return Err(ApiError::not_found("track"));
     }
@@ -256,19 +248,17 @@ async fn add_track(
     let now = chrono::Utc::now().timestamp();
     let mut tx = state.pool(lib_id)?.begin().await?;
 
-    let pl_exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let pl_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
     if pl_exists.is_none() {
         return Err(ApiError::not_found("playlist"));
     }
-    let tr_exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM tracks WHERE id = ?")
-            .bind(body.track_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let tr_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM tracks WHERE id = ?")
+        .bind(body.track_id)
+        .fetch_optional(&mut *tx)
+        .await?;
     if tr_exists.is_none() {
         return Err(ApiError::not_found("track"));
     }
@@ -308,21 +298,18 @@ async fn remove_track(
     state.require_library(lib_id)?;
     let now = chrono::Utc::now().timestamp();
     let mut tx = state.pool(lib_id)?.begin().await?;
-    let pl_exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let pl_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
     if pl_exists.is_none() {
         return Err(ApiError::not_found("playlist"));
     }
-    let res = sqlx::query(
-        "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
-    )
-    .bind(id)
-    .bind(track_id)
-    .execute(&mut *tx)
-    .await?;
+    let res = sqlx::query("DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?")
+        .bind(id)
+        .bind(track_id)
+        .execute(&mut *tx)
+        .await?;
     if res.rows_affected() == 0 {
         return Err(ApiError::not_found("track in playlist"));
     }
@@ -344,11 +331,10 @@ async fn set_tracks(
     let now = chrono::Utc::now().timestamp();
     let mut tx = state.pool(lib_id)?.begin().await?;
 
-    let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
     if exists.is_none() {
         return Err(ApiError::not_found("playlist"));
     }
@@ -367,7 +353,8 @@ async fn set_tracks(
     if !body.track_ids.is_empty() {
         let placeholders = vec!["?"; body.track_ids.len()].join(",");
         let sql = format!("SELECT COUNT(*) FROM tracks WHERE id IN ({placeholders})");
-        let mut q = sqlx::query_scalar::<_, i64>(&sql);
+        // Safe: `placeholders` is only "?" and "," characters, no interpolated data.
+        let mut q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
         for tid in &body.track_ids {
             q = q.bind(*tid);
         }

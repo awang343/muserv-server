@@ -71,11 +71,16 @@ async fn list_tracks(
     }
     sql.push_str(" ORDER BY album_artist, album, disc_no, track_no, title LIMIT ? OFFSET ?");
 
-    let mut q = sqlx::query_as::<_, Track>(&sql);
+    // Safe: dynamic part only appends fixed clauses; all values are bound below.
+    let mut q = sqlx::query_as::<_, Track>(sqlx::AssertSqlSafe(sql));
     for b in &binds {
         q = q.bind(b);
     }
-    let rows = q.bind(limit).bind(offset).fetch_all(state.pool(lib_id)?).await?;
+    let rows = q
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(state.pool(lib_id)?)
+        .await?;
     Ok(Json(rows))
 }
 
@@ -84,9 +89,10 @@ async fn get_track(
     Path((lib_id, id)): Path<(i64, i64)>,
 ) -> ApiResult<Json<Track>> {
     state.require_library(lib_id)?;
-    let row = sqlx::query_as::<_, Track>(&format!(
+    // Safe: TRACK_COLS is a fixed compile-time constant, no interpolated data.
+    let row = sqlx::query_as::<_, Track>(sqlx::AssertSqlSafe(format!(
         "SELECT {TRACK_COLS} FROM tracks WHERE id = ?"
-    ))
+    )))
     .bind(id)
     .fetch_optional(state.pool(lib_id)?)
     .await?

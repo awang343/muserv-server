@@ -7,9 +7,8 @@ use std::str::FromStr;
 pub async fn connect(db_path: &Path) -> Result<SqlitePool> {
     if let Some(parent) = db_path.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("creating db parent directory {}", parent.display())
-            })?;
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating db parent directory {}", parent.display()))?;
         }
     }
 

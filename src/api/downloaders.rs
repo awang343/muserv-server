@@ -97,7 +97,10 @@ async fn list(
     .map_err(|e| ApiError::bad_request(format!("listing downloaders: {e}")))??;
 
     Ok(Json(
-        names.into_iter().map(|name| DownloaderInfo { name }).collect(),
+        names
+            .into_iter()
+            .map(|name| DownloaderInfo { name })
+            .collect(),
     ))
 }
 
@@ -224,7 +227,12 @@ fn set_current_index(state: &SharedState, job_id: &str, index: Option<usize>) {
     }
 }
 
-fn finish_job(state: &SharedState, job_id: &str, status: JobStatus, summary: Option<ImportStatsView>) {
+fn finish_job(
+    state: &SharedState,
+    job_id: &str,
+    status: JobStatus,
+    summary: Option<ImportStatsView>,
+) {
     if let Some(job) = state
         .downloader_jobs
         .lock()
@@ -244,18 +252,32 @@ fn finish_job(state: &SharedState, job_id: &str, status: JobStatus, summary: Opt
 /// staging directory is imported into the library's content-addressed
 /// storage (moving each file into `.storage`, deduping by hash) and then
 /// removed.
-async fn run_job(state: SharedState, job_id: String, lib: Library, script: PathBuf, urls: Vec<String>) {
+async fn run_job(
+    state: SharedState,
+    job_id: String,
+    lib: Library,
+    script: PathBuf,
+    urls: Vec<String>,
+) {
     let total = urls.len();
     let staging_root = std::env::temp_dir().join("muserv-downloads").join(&job_id);
     let mut any_failed = false;
 
     for (index, url) in urls.iter().enumerate() {
         set_current_index(&state, &job_id, Some(index));
-        append_log(&state, &job_id, format!("=== [{}/{total}] {url} ===", index + 1));
+        append_log(
+            &state,
+            &job_id,
+            format!("=== [{}/{total}] {url} ===", index + 1),
+        );
 
         let dest_dir = staging_root.join(index.to_string());
         if let Err(e) = tokio::fs::create_dir_all(&dest_dir).await {
-            append_log(&state, &job_id, format!("failed to create download dir: {e}"));
+            append_log(
+                &state,
+                &job_id,
+                format!("failed to create download dir: {e}"),
+            );
             any_failed = true;
             continue;
         }
@@ -265,26 +287,35 @@ async fn run_job(state: SharedState, job_id: String, lib: Library, script: PathB
     }
 
     set_current_index(&state, &job_id, None);
-    append_log(&state, &job_id, "=== importing downloaded files ===".to_string());
+    append_log(
+        &state,
+        &job_id,
+        "=== importing downloaded files ===".to_string(),
+    );
 
-    let pool = state.pools.get(&lib.id).expect("library removed while job running").clone();
-    let (summary, import_failed) = match ingest::import_dir(&pool, &lib, &staging_root, CopyMode::Move).await {
-        Ok(stats) => {
-            append_log(
-                &state,
-                &job_id,
-                format!(
-                    "import: scanned={} imported={} duplicates={} failed={}",
-                    stats.scanned, stats.imported, stats.duplicates, stats.failed,
-                ),
-            );
-            (Some(ImportStatsView::from(&stats)), false)
-        }
-        Err(e) => {
-            append_log(&state, &job_id, format!("import failed: {e:#}"));
-            (None, true)
-        }
-    };
+    let pool = state
+        .pools
+        .get(&lib.id)
+        .expect("library removed while job running")
+        .clone();
+    let (summary, import_failed) =
+        match ingest::import_dir(&pool, &lib, &staging_root, CopyMode::Move).await {
+            Ok(stats) => {
+                append_log(
+                    &state,
+                    &job_id,
+                    format!(
+                        "import: scanned={} imported={} duplicates={} failed={}",
+                        stats.scanned, stats.imported, stats.duplicates, stats.failed,
+                    ),
+                );
+                (Some(ImportStatsView::from(&stats)), false)
+            }
+            Err(e) => {
+                append_log(&state, &job_id, format!("import failed: {e:#}"));
+                (None, true)
+            }
+        };
 
     let _ = tokio::fs::remove_dir_all(&staging_root).await;
 
@@ -326,8 +357,14 @@ async fn run_one(
         }
     };
 
-    let stdout = child.stdout.take().expect("child spawned with piped stdout");
-    let stderr = child.stderr.take().expect("child spawned with piped stderr");
+    let stdout = child
+        .stdout
+        .take()
+        .expect("child spawned with piped stdout");
+    let stderr = child
+        .stderr
+        .take()
+        .expect("child spawned with piped stderr");
 
     let stdout_state = state.clone();
     let stdout_job_id = job_id.to_string();

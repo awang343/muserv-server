@@ -10,10 +10,7 @@ use sqlx::FromRow;
 /// Routes nested under /api/libraries/{lib_id}.
 pub fn library_routes() -> Router<SharedState> {
     Router::new()
-        .route(
-            "/tracks/{id}/tags",
-            get(list_track_tags).post(add_user_tag),
-        )
+        .route("/tracks/{id}/tags", get(list_track_tags).post(add_user_tag))
         .route("/tracks/{id}/tags/{tag_id}", delete(remove_user_tag))
         .route("/tags", get(list_tags_in_library))
 }
@@ -32,11 +29,10 @@ async fn require_track_in_lib(
     track_id: i64,
 ) -> Result<(), ApiError> {
     state.require_library(lib_id)?;
-    let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM tracks WHERE id = ?")
-            .bind(track_id)
-            .fetch_optional(state.pool(lib_id)?)
-            .await?;
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM tracks WHERE id = ?")
+        .bind(track_id)
+        .fetch_optional(state.pool(lib_id)?)
+        .await?;
     if exists.is_none() {
         return Err(ApiError::not_found("track"));
     }
@@ -100,14 +96,12 @@ async fn add_user_tag(
     .fetch_one(&mut *tx)
     .await?;
 
-    sqlx::query(
-        "INSERT OR IGNORE INTO track_tags (track_id, tag_id, added_at) VALUES (?, ?, ?)",
-    )
-    .bind(id)
-    .bind(tag_id)
-    .bind(now)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT OR IGNORE INTO track_tags (track_id, tag_id, added_at) VALUES (?, ?, ?)")
+        .bind(id)
+        .bind(tag_id)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 
@@ -126,13 +120,11 @@ async fn remove_user_tag(
     Path((lib_id, track_id, tag_id)): Path<(i64, i64, i64)>,
 ) -> ApiResult<StatusCode> {
     require_track_in_lib(&state, lib_id, track_id).await?;
-    let res = sqlx::query(
-        "DELETE FROM track_tags WHERE track_id = ? AND tag_id = ?",
-    )
-    .bind(track_id)
-    .bind(tag_id)
-    .execute(state.pool(lib_id)?)
-    .await?;
+    let res = sqlx::query("DELETE FROM track_tags WHERE track_id = ? AND tag_id = ?")
+        .bind(track_id)
+        .bind(tag_id)
+        .execute(state.pool(lib_id)?)
+        .await?;
     if res.rows_affected() == 0 {
         return Err(ApiError::not_found("tag on track"));
     }
