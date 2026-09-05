@@ -29,36 +29,33 @@ pub struct Config {
 /// library's own sqlite db) and `.storage/` (its content-addressed audio
 /// files), both created on first run. Libraries are fully independent —
 /// nothing is shared across them.
+///
+/// `read_users` / `write_users` / `upload_users` grant access by username —
+/// a user not listed anywhere for a library has no access to it at all, as
+/// if it didn't exist. `read` controls visibility of the library and access
+/// to its contents; `write` controls editing playlists and tags; `upload`
+/// controls running downloader scripts against it. The lists are
+/// independent, so a username can appear in `write_users` without also
+/// being in `read_users`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LibraryConfig {
     pub name: String,
     pub path: PathBuf,
+    #[serde(default)]
+    pub read_users: Vec<String>,
+    #[serde(default)]
+    pub write_users: Vec<String>,
+    #[serde(default)]
+    pub upload_users: Vec<String>,
 }
 
-/// One user account. `permissions` grants access to a subset of libraries
-/// (by name) — a library with no matching entry is completely invisible to
-/// this user, as if it didn't exist.
+/// One user account. Library access is granted by listing this user's
+/// `username` in the relevant library's `read_users` / `write_users` /
+/// `upload_users`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UserConfig {
     pub username: String,
     pub token: String,
-    #[serde(rename = "library", default)]
-    pub permissions: Vec<UserLibraryPermission>,
-}
-
-/// Permissions granted to a user for a single library, referenced by name.
-/// `read` controls visibility of the library and access to its contents;
-/// `write` controls editing playlists and tags; `upload` controls running
-/// downloader scripts against it.
-#[derive(Debug, Clone, Deserialize)]
-pub struct UserLibraryPermission {
-    pub name: String,
-    #[serde(default)]
-    pub read: bool,
-    #[serde(default)]
-    pub write: bool,
-    #[serde(default)]
-    pub upload: bool,
 }
 
 impl Config {
@@ -97,14 +94,23 @@ impl Config {
             if user.token.trim().is_empty() {
                 bail!("user {username} has empty token");
             }
-            let mut seen_libs = HashSet::new();
-            for perm in &user.permissions {
-                let lib_name = perm.name.trim();
-                if !seen.contains(lib_name) {
-                    bail!("user {username} references unknown library: {lib_name}");
-                }
-                if !seen_libs.insert(lib_name.to_string()) {
-                    bail!("user {username} has duplicate permission entry for library: {lib_name}");
+        }
+
+        for lib in &self.libraries {
+            let lists = [
+                ("read_users", &lib.read_users),
+                ("write_users", &lib.write_users),
+                ("upload_users", &lib.upload_users),
+            ];
+            for (field, list) in lists {
+                for username in list {
+                    let username = username.trim();
+                    if !usernames.contains(username) {
+                        bail!(
+                            "library {} {field} references unknown user: {username}",
+                            lib.name
+                        );
+                    }
                 }
             }
         }
@@ -138,20 +144,21 @@ mod tests {
     #[test]
     fn valid_user_with_permissions() {
         let toml_str = format!(
-            "{BASE}\n[[user]]\nusername = \"alan\"\ntoken = \"secret\"\n  [[user.library]]\n  name = \"main\"\n  read = true\n"
+            "bind = \"127.0.0.1:7700\"\n[[library]]\nname = \"main\"\npath = \"/tmp/main\"\nread_users = [\"alan\"]\n\n[[user]]\nusername = \"alan\"\ntoken = \"secret\"\n"
         );
         let cfg = parse(&toml_str).unwrap();
         assert_eq!(cfg.users.len(), 1);
-        assert!(cfg.users[0].permissions[0].read);
+        assert_eq!(cfg.libraries[0].read_users, vec!["alan".to_string()]);
     }
 
     #[test]
-    fn rejects_permission_for_unknown_library() {
-        let toml_str = format!(
-            "{BASE}\n[[user]]\nusername = \"alan\"\ntoken = \"secret\"\n  [[user.library]]\n  name = \"nope\"\n  read = true\n"
+    fn rejects_permission_for_unknown_user() {
+        let toml_str = format!("{BASE}\n").replace(
+            "path = \"/tmp/main\"",
+            "path = \"/tmp/main\"\nread_users = [\"nope\"]",
         );
         let err = parse(&toml_str).unwrap_err();
-        assert!(err.to_string().contains("unknown library"), "{err}");
+        assert!(err.to_string().contains("unknown user"), "{err}");
     }
 
     #[test]

@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     tracing::info!(count = libs.len(), "libraries opened");
 
     let lib_list: Vec<libraries::Library> = libs.iter().map(|(l, _)| l.clone()).collect();
-    let resolved_users = users::resolve(&cfg.users, &lib_list).context("resolving users from config")?;
+    let resolved_users = users::resolve(&cfg, &lib_list).context("resolving users from config")?;
 
     match cli.cmd {
         Cmd::Import {

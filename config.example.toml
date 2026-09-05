@@ -11,13 +11,28 @@ bind = "127.0.0.1:7700"
 # a downloader script — nothing should be dropped directly into `path`.
 # The order here controls each library's id and the default sort in
 # clients — reordering or removing entries reassigns ids.
+#
+# `read_users` / `write_users` / `upload_users` grant access by username —
+# see the `[[user]]` section below for how usernames are defined. A library
+# that doesn't list a user in any of these is completely invisible to them:
+# it's left out of `GET /api/libraries` and every endpoint under it 404s
+# exactly as if the library didn't exist.
+#
+#   read_users   — see the library and browse it: tracks, albums, artists,
+#                  playlists, tags, search, streaming
+#   write_users  — create/rename/delete playlists and their tracks, add/remove tags
+#   upload_users — run downloader scripts against the library
 [[library]]
 name = "main"
 path = "/path/to/your/music"
+# read_users = ["alan", "guest"]
+# write_users = ["alan"]
+# upload_users = ["alan"]
 
 # [[library]]
 # name = "podcasts"
 # path = "/path/to/your/podcasts"
+# read_users = ["alan"]
 
 # Optional. Directory of executable downloader scripts clients can run to
 # pull music straight into the currently selected library — see
@@ -31,31 +46,15 @@ path = "/path/to/your/music"
 # below — with no [[user]] sections defined, every request is rejected with
 # 401 (the API fails closed, not open).
 #
-# Each user needs a unique username and a token (generate one with
-# `openssl rand -hex 32`), plus a [[user.library]] block per library they
-# should have any access to. A library with no matching block for a user is
-# completely invisible to them — it's left out of `GET /api/libraries` and
-# every endpoint under it 404s exactly as if the library didn't exist.
-#
-#   read   — see the library and browse it: tracks, albums, artists,
-#            playlists, tags, search, streaming
-#   write  — create/rename/delete playlists and their tracks, add/remove tags
-#   upload — run downloader scripts against the library
+# Each user just needs a unique username and a token (generate one with
+# `openssl rand -hex 32`). What they can actually access is controlled by the
+# `read_users` / `write_users` / `upload_users` lists on each `[[library]]`
+# above.
 #
 # [[user]]
 # username = "alan"
 # token = "paste-a-long-random-string-here"
 #
-#   [[user.library]]
-#   name = "main"
-#   read = true
-#   write = true
-#   upload = true
-#
 # [[user]]
 # username = "guest"
 # token = "paste-a-different-long-random-string-here"
-#
-#   [[user.library]]
-#   name = "main"
-#   read = true
