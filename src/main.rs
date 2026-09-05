@@ -104,12 +104,10 @@ async fn main() -> Result<()> {
             print_import_summary(&stats);
         }
         Cmd::Serve => {
-            if resolved_users.is_empty()
-                && !cfg.bind.starts_with("127.")
-                && !cfg.bind.starts_with("localhost")
-                && !cfg.bind.starts_with("[::1]")
-            {
-                tracing::warn!(bind = %cfg.bind, "no users configured and bind is non-loopback — API is open");
+            if resolved_users.is_empty() {
+                tracing::warn!(
+                    "no users configured — every API request will be rejected with 401; add at least one [[user]] to config.toml"
+                );
             }
             let router = api::router(libs, resolved_users, cfg.downloaders_path.clone());
             let listener = tokio::net::TcpListener::bind(&cfg.bind)

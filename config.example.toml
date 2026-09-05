@@ -26,10 +26,10 @@ path = "/path/to/your/music"
 # API returns an empty list.
 # downloaders_path = "/path/to/muserv/scripts/downloaders"
 
-# Optional. If no [[user]] sections are defined, the API is open — no auth
-# required. Fine for a loopback-only bind, never for anything reachable over
-# a network. Once you add users, every request must present
-# `Authorization: Basic <base64(username:token)>` matching one of them.
+# Required to use the API at all. Every request must present
+# `Authorization: Basic <base64(username:token)>` matching a configured user
+# below — with no [[user]] sections defined, every request is rejected with
+# 401 (the API fails closed, not open).
 #
 # Each user needs a unique username and a token (generate one with
 # `openssl rand -hex 32`), plus a [[user.library]] block per library they

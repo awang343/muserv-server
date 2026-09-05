@@ -11,10 +11,10 @@ pub struct Config {
     #[serde(rename = "library", default)]
     pub libraries: Vec<LibraryConfig>,
 
-    /// One entry per user account. If empty, all /api/* routes are open —
-    /// fine for localhost, never for non-loopback binds. Otherwise every
-    /// request must present `Authorization: Basic <base64(username:token)>`
-    /// matching one of these users.
+    /// One entry per user account. Every request must present
+    /// `Authorization: Basic <base64(username:token)>` matching one of these
+    /// users — if this is empty, every request is rejected, since there's
+    /// nothing to match against.
     #[serde(rename = "user", default)]
     pub users: Vec<UserConfig>,
 
@@ -130,7 +130,7 @@ mod tests {
     "#;
 
     #[test]
-    fn no_users_is_valid_and_open() {
+    fn no_users_is_valid_config() {
         let cfg = parse(BASE).unwrap();
         assert!(cfg.users.is_empty());
     }

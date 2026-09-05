@@ -14,34 +14,24 @@ use std::sync::Arc;
 /// The requester's identity and permissions, attached to the request by
 /// `authenticate` and read by `require_library_read` and by handlers that
 /// gate a specific action (e.g. playlist writes, downloader runs).
+///
+/// There is no "open" state: if no `[[user]]` sections are configured, no
+/// request can ever match a user, so `authenticate` rejects everything with
+/// 401 before a `CurrentUser` is ever created.
 #[derive(Clone)]
-pub enum CurrentUser {
-    /// No `[[user]]` sections are configured — the whole API is open, same
-    /// as today's behavior with no `auth_token` set.
-    Open,
-    Authenticated(Arc<User>),
-}
+pub struct CurrentUser(Arc<User>);
 
 impl CurrentUser {
     pub fn can_read(&self, library_id: i64) -> bool {
-        match self {
-            CurrentUser::Open => true,
-            CurrentUser::Authenticated(u) => u.access(library_id).read,
-        }
+        self.0.access(library_id).read
     }
 
     pub fn can_write(&self, library_id: i64) -> bool {
-        match self {
-            CurrentUser::Open => true,
-            CurrentUser::Authenticated(u) => u.access(library_id).write,
-        }
+        self.0.access(library_id).write
     }
 
     pub fn can_upload(&self, library_id: i64) -> bool {
-        match self {
-            CurrentUser::Open => true,
-            CurrentUser::Authenticated(u) => u.access(library_id).upload,
-        }
+        self.0.access(library_id).upload
     }
 
     pub fn require_write(&self, library_id: i64) -> ApiResult<()> {
@@ -61,16 +51,12 @@ impl CurrentUser {
     }
 }
 
-/// Authenticates the request and attaches a `CurrentUser` to it. If no users
-/// are configured, every request is treated as `CurrentUser::Open`.
-/// Otherwise requires `Authorization: Basic <base64(username:token)>`
-/// matching a configured user, comparing the token in constant time.
+/// Authenticates the request and attaches a `CurrentUser` to it. Requires
+/// `Authorization: Basic <base64(username:token)>` matching a configured
+/// user, comparing the token in constant time. If no `[[user]]` sections are
+/// configured at all, no credentials can ever match, so every request is
+/// rejected with 401 — the API fails closed rather than open.
 pub async fn authenticate(State(state): State<SharedState>, mut req: Request, next: Next) -> Response {
-    if state.users.is_empty() {
-        req.extensions_mut().insert(CurrentUser::Open);
-        return next.run(req).await;
-    }
-
     let creds = req
         .headers()
         .get(header::AUTHORIZATION)
@@ -88,7 +74,7 @@ pub async fn authenticate(State(state): State<SharedState>, mut req: Request, ne
     match user {
         Some(u) => {
             req.extensions_mut()
-                .insert(CurrentUser::Authenticated(Arc::new(u.clone())));
+                .insert(CurrentUser(Arc::new(u.clone())));
             next.run(req).await
         }
         None => unauthorized(),
@@ -188,8 +174,24 @@ mod tests {
     }
 
     #[test]
-    fn open_user_can_do_everything() {
-        let user = CurrentUser::Open;
-        assert!(user.can_read(1) && user.can_write(1) && user.can_upload(1));
+    fn current_user_reflects_granted_permissions() {
+        let mut permissions = HashMap::new();
+        permissions.insert(
+            1,
+            crate::users::LibraryAccess {
+                read: true,
+                write: false,
+                upload: false,
+            },
+        );
+        let user = CurrentUser(Arc::new(User {
+            username: "alan".to_string(),
+            token: "secret".to_string(),
+            permissions,
+        }));
+        assert!(user.can_read(1));
+        assert!(!user.can_write(1));
+        assert!(!user.can_upload(1));
+        assert!(!user.can_read(2));
     }
 }
