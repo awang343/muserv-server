@@ -1,10 +1,11 @@
+use crate::api::auth::CurrentUser;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::SharedState;
 use crate::ingest::{self, CopyMode, ImportStatsView};
 use crate::libraries::Library;
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path as StdPath, PathBuf};
@@ -150,10 +151,12 @@ struct RunResponse {
 /// content-addressed storage.
 async fn run(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, name)): Path<(i64, String)>,
     Json(body): Json<RunBody>,
 ) -> ApiResult<Json<RunResponse>> {
     let lib = state.require_library(lib_id)?;
+    user.require_upload(lib_id)?;
     let script = resolve_script(&state, &name)?;
     let urls: Vec<String> = body
         .urls

@@ -1,9 +1,10 @@
+use crate::api::auth::CurrentUser;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::SharedState;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -100,10 +101,12 @@ async fn list(
 
 async fn create(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path(lib_id): Path<i64>,
     Json(body): Json<NewPlaylist>,
 ) -> ApiResult<(StatusCode, Json<PlaylistRow>)> {
     state.require_library(lib_id)?;
+    user.require_write(lib_id)?;
     let name = body.name.trim();
     if name.is_empty() {
         return Err(ApiError::bad_request("name must be non-empty"));
@@ -201,10 +204,12 @@ async fn fetch_playlist_tracks(
 
 async fn update(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, id)): Path<(i64, i64)>,
     Json(body): Json<PatchPlaylist>,
 ) -> ApiResult<Json<PlaylistRow>> {
     state.require_library(lib_id)?;
+    user.require_write(lib_id)?;
     let name = body.name.trim();
     if name.is_empty() {
         return Err(ApiError::bad_request("name must be non-empty"));
@@ -226,9 +231,11 @@ async fn update(
 
 async fn delete_one(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, id)): Path<(i64, i64)>,
 ) -> ApiResult<StatusCode> {
     state.require_library(lib_id)?;
+    user.require_write(lib_id)?;
     let res = sqlx::query("DELETE FROM playlists WHERE id = ?")
         .bind(id)
         .execute(state.pool(lib_id)?)
@@ -241,10 +248,12 @@ async fn delete_one(
 
 async fn add_track(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, id)): Path<(i64, i64)>,
     Json(body): Json<AddTrackBody>,
 ) -> ApiResult<StatusCode> {
     state.require_library(lib_id)?;
+    user.require_write(lib_id)?;
     let now = chrono::Utc::now().timestamp();
     let mut tx = state.pool(lib_id)?.begin().await?;
 
@@ -293,9 +302,11 @@ async fn add_track(
 
 async fn remove_track(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, id, track_id)): Path<(i64, i64, i64)>,
 ) -> ApiResult<StatusCode> {
     state.require_library(lib_id)?;
+    user.require_write(lib_id)?;
     let now = chrono::Utc::now().timestamp();
     let mut tx = state.pool(lib_id)?.begin().await?;
     let pl_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM playlists WHERE id = ?")
@@ -324,10 +335,12 @@ async fn remove_track(
 
 async fn set_tracks(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, id)): Path<(i64, i64)>,
     Json(body): Json<SetTracksBody>,
 ) -> ApiResult<StatusCode> {
     state.require_library(lib_id)?;
+    user.require_write(lib_id)?;
     let now = chrono::Utc::now().timestamp();
     let mut tx = state.pool(lib_id)?.begin().await?;
 

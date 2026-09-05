@@ -8,6 +8,7 @@ mod config;
 mod db;
 mod ingest;
 mod libraries;
+mod users;
 
 #[derive(Parser)]
 #[command(
@@ -75,6 +76,9 @@ async fn main() -> Result<()> {
     let libs = libraries::open_all(&cfg.libraries).await?;
     tracing::info!(count = libs.len(), "libraries opened");
 
+    let lib_list: Vec<libraries::Library> = libs.iter().map(|(l, _)| l.clone()).collect();
+    let resolved_users = users::resolve(&cfg.users, &lib_list).context("resolving users from config")?;
+
     match cli.cmd {
         Cmd::Import {
             library,
@@ -100,14 +104,14 @@ async fn main() -> Result<()> {
             print_import_summary(&stats);
         }
         Cmd::Serve => {
-            if cfg.auth_token.is_none()
+            if resolved_users.is_empty()
                 && !cfg.bind.starts_with("127.")
                 && !cfg.bind.starts_with("localhost")
                 && !cfg.bind.starts_with("[::1]")
             {
-                tracing::warn!(bind = %cfg.bind, "auth_token is unset and bind is non-loopback — API is open");
+                tracing::warn!(bind = %cfg.bind, "no users configured and bind is non-loopback — API is open");
             }
-            let router = api::router(libs, cfg.auth_token.clone(), cfg.downloaders_path.clone());
+            let router = api::router(libs, resolved_users, cfg.downloaders_path.clone());
             let listener = tokio::net::TcpListener::bind(&cfg.bind)
                 .await
                 .with_context(|| format!("binding {}", cfg.bind))?;

@@ -3,11 +3,6 @@
 # HTTP bind address.
 bind = "127.0.0.1:7700"
 
-# Optional. If set, all /api/* routes require `Authorization: Bearer <token>`.
-# Required in practice for any non-loopback bind. Generate one with:
-#   openssl rand -hex 32
-# auth_token = "paste-a-long-random-string-here"
-
 # One or more libraries. Names must be unique and are user-visible. Each
 # library is fully independent: `path` is a plain directory muserv owns,
 # containing only that library's own `library.db` and a content-addressed
@@ -30,3 +25,37 @@ path = "/path/to/your/music"
 # scripts/downloaders/yt-dlp.sh for a real one. Unset means the downloaders
 # API returns an empty list.
 # downloaders_path = "/path/to/muserv/scripts/downloaders"
+
+# Optional. If no [[user]] sections are defined, the API is open — no auth
+# required. Fine for a loopback-only bind, never for anything reachable over
+# a network. Once you add users, every request must present
+# `Authorization: Basic <base64(username:token)>` matching one of them.
+#
+# Each user needs a unique username and a token (generate one with
+# `openssl rand -hex 32`), plus a [[user.library]] block per library they
+# should have any access to. A library with no matching block for a user is
+# completely invisible to them — it's left out of `GET /api/libraries` and
+# every endpoint under it 404s exactly as if the library didn't exist.
+#
+#   read   — see the library and browse it: tracks, albums, artists,
+#            playlists, tags, search, streaming
+#   write  — create/rename/delete playlists and their tracks, add/remove tags
+#   upload — run downloader scripts against the library
+#
+# [[user]]
+# username = "alan"
+# token = "paste-a-long-random-string-here"
+#
+#   [[user.library]]
+#   name = "main"
+#   read = true
+#   write = true
+#   upload = true
+#
+# [[user]]
+# username = "guest"
+# token = "paste-a-different-long-random-string-here"
+#
+#   [[user.library]]
+#   name = "main"
+#   read = true

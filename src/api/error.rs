@@ -21,6 +21,12 @@ impl ApiError {
             message: msg.into(),
         }
     }
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: msg.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

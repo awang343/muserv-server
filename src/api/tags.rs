@@ -1,9 +1,10 @@
+use crate::api::auth::CurrentUser;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::SharedState;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -71,10 +72,12 @@ pub struct AddedTag {
 
 async fn add_user_tag(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, id)): Path<(i64, i64)>,
     Json(body): Json<NewTag>,
 ) -> ApiResult<(StatusCode, Json<AddedTag>)> {
     require_track_in_lib(&state, lib_id, id).await?;
+    user.require_write(lib_id)?;
     let namespace = body.namespace.trim();
     let value = body.value.trim();
     if value.is_empty() {
@@ -117,9 +120,11 @@ async fn add_user_tag(
 
 async fn remove_user_tag(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path((lib_id, track_id, tag_id)): Path<(i64, i64, i64)>,
 ) -> ApiResult<StatusCode> {
     require_track_in_lib(&state, lib_id, track_id).await?;
+    user.require_write(lib_id)?;
     let res = sqlx::query("DELETE FROM track_tags WHERE track_id = ? AND tag_id = ?")
         .bind(track_id)
         .bind(tag_id)

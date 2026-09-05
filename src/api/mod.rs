@@ -1,8 +1,10 @@
+use crate::api::auth::CurrentUser;
 use crate::api::error::{ApiError, ApiResult};
 use crate::libraries::Library;
+use crate::users::User;
 use axum::extract::{Path, State};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -23,7 +25,7 @@ pub mod tracks;
 #[derive(Clone)]
 pub struct AppState {
     pub pools: HashMap<i64, SqlitePool>,
-    pub auth_token: Option<String>,
+    pub users: Vec<User>,
     pub libraries: Vec<Library>,
     pub downloaders_path: Option<PathBuf>,
     pub downloader_jobs: downloaders::JobStore,
@@ -53,14 +55,14 @@ impl AppState {
 
 pub fn router(
     libraries: Vec<(Library, SqlitePool)>,
-    auth_token: Option<String>,
+    users: Vec<User>,
     downloaders_path: Option<PathBuf>,
 ) -> Router {
     let pools = libraries.iter().map(|(l, p)| (l.id, p.clone())).collect();
     let libraries = libraries.into_iter().map(|(l, _)| l).collect();
     let state = Arc::new(AppState {
         pools,
-        auth_token,
+        users,
         libraries,
         downloaders_path,
         downloader_jobs: Arc::new(Mutex::new(HashMap::new())),
@@ -72,7 +74,11 @@ pub fn router(
         .merge(search::routes())
         .merge(playlists::routes())
         .merge(downloaders::routes())
-        .merge(stream::routes());
+        .merge(stream::routes())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_library_read,
+        ));
 
     let protected = Router::new()
         .route("/api/libraries", get(list_libraries))
@@ -80,7 +86,7 @@ pub fn router(
         .nest("/api/libraries/{lib_id}", library_scoped)
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            auth::require_bearer,
+            auth::authenticate,
         ));
 
     let open = Router::new().route("/health", get(|| async { Json(json!({ "ok": true })) }));
@@ -93,13 +99,28 @@ pub fn router(
         .layer(TraceLayer::new_for_http())
 }
 
-async fn list_libraries(State(state): State<SharedState>) -> Json<Vec<Library>> {
-    Json(state.libraries.clone())
+async fn list_libraries(
+    State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
+) -> Json<Vec<Library>> {
+    Json(
+        state
+            .libraries
+            .iter()
+            .filter(|l| user.can_read(l.id))
+            .cloned()
+            .collect(),
+    )
 }
 
 async fn get_library(
     State(state): State<SharedState>,
+    Extension(user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Library>> {
-    Ok(Json(state.require_library(id)?))
+    let lib = state.require_library(id)?;
+    if !user.can_read(id) {
+        return Err(ApiError::not_found("library"));
+    }
+    Ok(Json(lib))
 }
